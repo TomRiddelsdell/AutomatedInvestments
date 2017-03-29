@@ -14,7 +14,7 @@ import data_fns
 from optimize_fns import *
 import pandas as pd
 import numpy as np
-from PyQt5.QtWidgets import (QMainWindow, QLabel, QFileDialog, QApplication, QPushButton, QSlider, QSizePolicy, QVBoxLayout, QWidget)
+from PyQt5.QtWidgets import (QMainWindow, QLabel, QFileDialog, QApplication, QPushButton, QSlider, QSizePolicy, QVBoxLayout, QWidget, QComboBox)
 from PyQt5.QtCore import (Qt)
 import os
 import pickle as pkl
@@ -28,62 +28,63 @@ class Launchpad(QMainWindow):
     def __init__(self):
         super().__init__()
         
-        self.initUI()
-        
-    def initUI(self):      
-        self.btnUniverse = QPushButton('Load Asset Universe', self)
-        self.btnUniverse.move(50, 50)
-        self.btnUniverse.resize(200,40)
-        self.btnUniverse.clicked.connect(self.openAssetUniverse)  
+        self.btn_universe = QPushButton('Load Asset Universe', self)
+        self.btn_universe.move(50, 50)
+        self.btn_universe.resize(200,40)
+        self.btn_universe.clicked.connect(self.open_asset_universe)  
 
-        self.txtUniverse = QLabel(self)
-        self.txtUniverse.move(260, 50)
-        self.txtUniverse.resize(400,40)
+        self.txt_universe = QLabel(self)
+        self.txt_universe.move(260, 50)
+        self.txt_universe.resize(400,40)
   
-        self.btnPrices = QPushButton('Load Historic Prices', self)
-        self.btnPrices.move(50, 100)
-        self.btnPrices.resize(200,40)
-        self.btnPrices.clicked.connect(self.loadHistoricPrices)    
+        self.btn_prices = QPushButton('Load Historic Prices', self)
+        self.btn_prices.move(50, 100)
+        self.btn_prices.resize(200,40)
+        self.btn_prices.clicked.connect(self.load_historic_prices)    
         
-        self.txtUniverseStatus = QLabel(self)
-        self.txtUniverseStatus.move(260, 100)
-        self.txtUniverseStatus.resize(400,40)
+        self.txt_universe_status = QLabel(self)
+        self.txt_universe_status.move(260, 100)
+        self.txt_universe_status.resize(400,40)
   
-        self.btnOptimize = QPushButton('Mean Variance Optimize', self)
-        self.btnOptimize.move(50, 150)
-        self.btnOptimize.resize(200,40)
-        self.btnOptimize.clicked.connect(self.meanVarianceOptimization)    
+        self.cmb_optimization_method = QComboBox(self)
+        self.cmb_optimization_method.addItem("Mean-Variance")
+        self.cmb_optimization_method.addItem("Hierarchical Risk Parity")
+        self.cmb_optimization_method.resize(200,40)
+        self.cmb_optimization_method.move(260, 150)
+
+        self.btn_optimization = QPushButton('Mean Variance Optimize', self)
+        self.btn_optimization.move(50, 150)
+        self.btn_optimization.resize(200,40)
+        self.btn_optimization.clicked.connect(self.mean_variance_optimization)    
         
-        self.txtOptimizeStatus = QLabel(self)
-        self.txtOptimizeStatus.move(260, 150)
-        self.txtOptimizeStatus.resize(400,40)
+        self.lbl_optimize_status = QLabel(self)
+        self.lbl_optimize_status.move(470, 150)
+        self.lbl_optimize_status.resize(400,40)
         
-        self.sliStandardDeviation = QSlider(Qt.Horizontal)
-        #self.sliStandardDeviation.setMinimum(1)
-        #self.sliStandardDeviation.setMaximum(1000)
-        self.sliStandardDeviation.setValue(10)
-        self.sliStandardDeviation.setTickPosition(QSlider.TicksBelow)
-        self.sliStandardDeviation.setTickInterval(1)
-        self.sliStandardDeviation.valueChanged.connect(self.standard_deviation_changed)
+        self.sli_vol_target = QSlider(Qt.Horizontal)
+        self.sli_vol_target.setValue(10)
+        self.sli_vol_target.setTickPosition(QSlider.TicksBelow)
+        self.sli_vol_target.setTickInterval(1)
+        self.sli_vol_target.valueChanged.connect(self.standard_deviation_changed)
  
-        self.txtTgtVol = QLabel(self)
-        self.txtTgtVol.resize(400,40)
+        self.lbl_vol_target = QLabel(self)
+        self.lbl_vol_target.resize(400,40)
 
         self.dpi = 100
         self.fig = Figure((5.0, 6.0), dpi=self.dpi)
-        self.canvas = FigureCanvas(self.fig)
-        self.axes = self.fig.add_subplot(111)
+        self.can_weights = FigureCanvas(self.fig)
+        self.plt_weights = self.fig.add_subplot(111)
 
-        self.canvas2 = FigureCanvas(self.fig)
-        self.ops = self.fig.add_subplot(111)
+        self.can_efficient_frontier = FigureCanvas(self.fig)
+        self.plt_efficient_frontier = self.fig.add_subplot(111)
 
         self.main_widget = QWidget(self)
         l = QVBoxLayout(self.main_widget)
-        l.addWidget(self.canvas2)
-        l.addWidget(self.txtTgtVol)
-        l.addWidget(self.sliStandardDeviation)
-        l.addWidget(self.canvas)
-        self.canvas.setParent(self.main_widget)
+        l.addWidget(self.can_efficient_frontier)
+        l.addWidget(self.lbl_vol_target)
+        l.addWidget(self.sli_vol_target)
+        l.addWidget(self.can_weights)
+        self.can_weights.setParent(self.main_widget)
 
         self.main_widget.setFocus()
         self.main_widget.move(5, 250)
@@ -98,22 +99,22 @@ class Launchpad(QMainWindow):
         
         DefaultPath = 'Universe/AssetUniverse.csv'
         if os.path.exists(DefaultPath):
-            self.txtUniverse.setText(os.path.relpath(DefaultPath))
-            self.symbols = pd.read_csv(self.txtUniverse.text())
+            self.txt_universe.setText(os.path.relpath(DefaultPath))
+            self.symbols = pd.read_csv(self.txt_universe.text())
             self.update_cache_status()
         
-    def openAssetUniverse(self):
+    def open_asset_universe(self):
         fname = QFileDialog.getOpenFileName(self, 'Open file', 'Universe/AssetUniverse.csv')
 
         if fname[0]:
-            self.txtUniverse.setText(os.path.relpath(fname[0]))        
-            self.symbols = pd.read_csv(self.txtUniverse.text())
+            self.txt_universe.setText(os.path.relpath(fname[0]))        
+            self.symbols = pd.read_csv(self.txt_universe.text())
         else:
-            self.txtUniverse.setText("Select Asset Universe File")       
+            self.txt_universe.setText("Select Asset Universe File")       
         
         self.update_cache_status()
             
-    def loadHistoricPrices(self):
+    def load_historic_prices(self):
         #QApplication.setOverrideCursor(Qt.WaitCursor)
         fixings, start_dates = data_fns.yahoo_prices(self.symbols, start_date='1970-01-01')
         #QApplication.restoreOverrideCursor()
@@ -121,8 +122,8 @@ class Launchpad(QMainWindow):
         pkl.dump(start_dates, open(self.get_start_cache_name(self.get_cache_name()), "wb"))
         self.update_cache_status()
         
-    def meanVarianceOptimization(self):
-        self.txtOptimizeStatus.setText("Optimization Running...")
+    def mean_variance_optimization(self):
+        self.lbl_optimize_status.setText("Optimization Running...")
         
         fixings_sparse = pd.read_pickle(self.get_cache_name())
         start_dates = pkl.load(open(self.get_start_cache_name(self.get_cache_name()), "rb"))
@@ -131,17 +132,23 @@ class Launchpad(QMainWindow):
         resample = fixings.resample('W-MON').mean()
         self.returns = resample.pct_change(fill_method='pad')
         
-        self.optimization_solutions = mean_variance(self.returns)
-        self.optimization_solutions = sorted(self.optimization_solutions, key=lambda x: x['sd']);
+        if(self.cmb_optimization_method.currentText() == "Mean-Variance"):
+            self.optimization_solutions = mean_variance(self.returns)
+        elif(self.cmb_optimization_method.currentText() == "Hierarchical Risk Parity"):
+            self.optimization_solutions = hierarchical_risk_parity(self.returns)            
+        else:
+            raise ValueError("Optimization method not yet implemented")
+            
+        self.optimization_solutions = sorted(self.optimization_solutions, key=lambda x: x['sd'])
         self.plot_portfolios(self.optimization_solutions)
         
-        self.txtOptimizeStatus.setText("Optimization Complete")
-        self.sliStandardDeviation.setMinimum(self.optimization_solutions[0]['sd']*1000)
-        self.sliStandardDeviation.setMaximum(self.optimization_solutions[-1]['sd']*1000)
+        self.lbl_optimize_status.setText("Optimization Complete")
+        self.sli_vol_target.setMinimum(self.optimization_solutions[0]['sd']*1000)
+        self.sli_vol_target.setMaximum(self.optimization_solutions[-1]['sd']*1000)
         self.standard_deviation_changed()
 
     def get_cache_name(self):
-        return os.path.normpath('Pickle/' + self.txtUniverse.text().replace(".csv", ".pkl").translate(
+        return os.path.normpath('Pickle/' + self.txt_universe.text().replace(".csv", ".pkl").translate(
                                 str.maketrans({"\\":  r"-", "/":  r"-"})))
     
     def get_start_cache_name(self, cache):
@@ -154,47 +161,36 @@ class Launchpad(QMainWindow):
         else:
             status = 'Nothing Cached @ {}'.format(self.get_cache_name())
         
-        self.txtUniverseStatus.setText(status)
+        self.txt_universe_status.setText(status)
 
     def plot_portfolios(self, sols):
         for i in sols:
-            self.ops.plot(i['sd'], i['mean'], 'bs')
+            self.plt_efficient_frontier.plot(i['sd'], i['mean'], 'bs')
             
         p = self.returns.mean().as_matrix()
         covs = self.returns.cov().as_matrix()
-        for i in range(len(p)):
-            self.ops.plot(cvxpy.sqrt(covs[i,i]).value, p[i], 'ro')
+        for i, mean in enumerate(p):
+            self.plt_efficient_frontier.plot(cvxpy.sqrt(covs[i,i]).value, mean, 'ro')
             
-        self.ops.set_xlabel('Standard deviation')
-        self.ops.set_ylabel('Return')
-        self.canvas2.draw()
+        self.plt_efficient_frontier.set_xlabel('Standard deviation')
+        self.plt_efficient_frontier.set_ylabel('Return')
+        self.can_efficient_frontier.draw()
         
     def draw_weights(self, sol):
-        self.axes.clear()        
-        self.axes.grid(1)
+        self.plt_weights.clear()        
+        self.plt_weights.grid(1)
         objects = [x[1] for x in self.returns.columns.values];
         y_pos = np.arange(len(objects))
-        self.axes.bar(y_pos, np.squeeze(np.asarray(sol['wgts'])))
-        self.axes.set_xticks(y_pos+0.5)
-        self.axes.set_xticklabels(objects, rotation='vertical')
-        self.canvas.draw()
+        self.plt_weights.bar(y_pos, np.squeeze(np.asarray(sol['wgts'])))
+        self.plt_weights.set_xticks(y_pos+0.5)
+        self.plt_weights.set_xticklabels(objects, rotation='vertical')
+        self.can_weights.draw()
         
     def standard_deviation_changed(self):
-        TgtVol = self.sliStandardDeviation.value()/1000
-        self.txtTgtVol.setText("Target Vol: {}%".format(TgtVol*100))
-        if len(self.optimization_solutions) > 0:
-            # Find the nearest solution
-            def sd_greater_than(tgt):
-                def fil(sol):
-                    sol['sd']>tgt
-                return fil
-                    
-            #tgt_sd = sd_greater_than(self.sliStandardDeviation.value()/10000)
-            #sol = next(filter(tgt_sd, self.optimization_solutions), None)
-            for sol in self.optimization_solutions:
-                if(sol['sd'] >= TgtVol):
-                    self.draw_weights(sol)
-                    break
+        TgtVol = self.sli_vol_target.value()/1000
+        self.lbl_vol_target.setText("Target Vol: {}%".format(TgtVol*100))
+        sol = next(filter((lambda z, tgt=TgtVol: z['sd'] >= tgt), self.optimization_solutions))
+        self.draw_weights(sol)
         
 if __name__ == '__main__':
     app = 0
