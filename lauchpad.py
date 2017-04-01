@@ -21,7 +21,7 @@ import pickle as pkl
 import operator
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-
+import datetime as dt
 
 class Launchpad(QMainWindow):
     
@@ -49,6 +49,7 @@ class Launchpad(QMainWindow):
         self.cmb_optimization_method = QComboBox(self)
         self.cmb_optimization_method.addItem("Mean-Variance")
         self.cmb_optimization_method.addItem("Hierarchical Risk Parity")
+        self.cmb_optimization_method.addItem("Hierarchical Risk Parity (Robust)")
         self.cmb_optimization_method.resize(200,40)
         self.cmb_optimization_method.move(260, 150)
 
@@ -95,7 +96,7 @@ class Launchpad(QMainWindow):
         self.show()
         
         self.optimization_solutions = []
-        self.returns = pd.DataFrame()
+        self.fixings = pd.DataFrame()
         
         DefaultPath = 'Universe/AssetUniverse.csv'
         if os.path.exists(DefaultPath):
@@ -127,21 +128,19 @@ class Launchpad(QMainWindow):
         
         fixings_sparse = pd.read_pickle(self.get_cache_name())
         start_dates = pkl.load(open(self.get_start_cache_name(self.get_cache_name()), "rb"))
-        fixings = fixings_sparse[fixings_sparse.index >= max(start_dates.values())]
-        # Do we want to resample to just weekly/monthly fixings?
-        resample = fixings.resample('W-MON').mean()
-        self.returns = resample.pct_change(fill_method='pad')
-        
+        self.fixings = fixings_sparse[fixings_sparse.index >= max(start_dates.values()) ].fillna(method='ffill')
+
         if(self.cmb_optimization_method.currentText() == "Mean-Variance"):
-            self.optimization_solutions = mean_variance(self.returns)
+            self.optimization_solutions = mean_variance(self.fixings)
+            self.optimization_solutions = sorted(self.optimization_solutions, key=lambda x: x['sd'])
+            self.plot_portfolios(self.optimization_solutions)
         elif(self.cmb_optimization_method.currentText() == "Hierarchical Risk Parity"):
-            self.optimization_solutions = hierarchical_risk_parity(self.returns)            
+            self.optimization_solutions = hierarchical_risk_parity(self.fixings)
+        elif(self.cmb_optimization_method.currentText() == "Hierarchical Risk Parity (Robust)"):
+            self.optimization_solutions = hierarchical_risk_parity_robust(self.fixings)
         else:
             raise ValueError("Optimization method not yet implemented")
             
-        self.optimization_solutions = sorted(self.optimization_solutions, key=lambda x: x['sd'])
-        self.plot_portfolios(self.optimization_solutions)
-        
         self.lbl_optimize_status.setText("Optimization Complete")
         self.sli_vol_target.setMinimum(self.optimization_solutions[0]['sd']*1000)
         self.sli_vol_target.setMaximum(self.optimization_solutions[-1]['sd']*1000)
@@ -157,41 +156,44 @@ class Launchpad(QMainWindow):
     def update_cache_status(self):
         if os.path.exists(self.get_cache_name()) and os.path.exists(self.get_start_cache_name(self.get_cache_name())):
             start_dates = pkl.load(open(self.get_start_cache_name(self.get_cache_name()), "rb"))
-            status = 'Cached. Max start date: {}'.format(max(start_dates.items(), key=operator.itemgetter(1))) 
+            status = 'Cached. Max start date: {}'.format(max(start_dates.items(), key=operator.itemgetter(1)))
         else:
             status = 'Nothing Cached @ {}'.format(self.get_cache_name())
-        
+
         self.txt_universe_status.setText(status)
 
     def plot_portfolios(self, sols):
         for i in sols:
             self.plt_efficient_frontier.plot(i['sd'], i['mean'], 'bs')
-            
-        p = self.returns.mean().as_matrix()
-        covs = self.returns.cov().as_matrix()
+
+        # Do we want to resample to just weekly/monthly fixings?
+        resample = self.fixings.resample('W-MON').mean()
+        returns = resample.pct_change(fill_method='pad')
+
+        p = returns.mean().as_matrix()
+        covs = returns.cov().as_matrix()
         for i, mean in enumerate(p):
             self.plt_efficient_frontier.plot(cvxpy.sqrt(covs[i,i]).value, mean, 'ro')
-            
+
         self.plt_efficient_frontier.set_xlabel('Standard deviation')
         self.plt_efficient_frontier.set_ylabel('Return')
         self.can_efficient_frontier.draw()
-        
+
     def draw_weights(self, sol):
-        self.plt_weights.clear()        
+        self.plt_weights.clear()
         self.plt_weights.grid(1)
-        objects = [x[1] for x in self.returns.columns.values];
-        y_pos = np.arange(len(objects))
-        self.plt_weights.bar(y_pos, np.squeeze(np.asarray(sol['wgts'])))
+        y_pos = np.arange(len(sol['wgts']))
+        self.plt_weights.bar(y_pos, sol['wgts'].values())
         self.plt_weights.set_xticks(y_pos+0.5)
-        self.plt_weights.set_xticklabels(objects, rotation='vertical')
+        self.plt_weights.set_xticklabels(sol['wgts'].keys(), rotation='vertical')
         self.can_weights.draw()
-        
+
     def standard_deviation_changed(self):
         TgtVol = self.sli_vol_target.value()/1000
         self.lbl_vol_target.setText("Target Vol: {}%".format(TgtVol*100))
         sol = next(filter((lambda z, tgt=TgtVol: z['sd'] >= tgt), self.optimization_solutions))
         self.draw_weights(sol)
-        
+
 if __name__ == '__main__':
     app = 0
     app = QApplication(sys.argv)
