@@ -116,7 +116,7 @@ def hrp(cov, corr):
     # recover labels
     hrp = weights_from_clusters(cov, sortIx)
 
-    return [{'sd':1, 'wgts':hrp.to_dict()}]
+    return [{'sd':1, 'wgts':hrp.to_dict(), 'linkage':link}]
 
                        
 def hierarchical_risk_parity(fixings):

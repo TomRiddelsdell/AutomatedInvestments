@@ -21,7 +21,9 @@ import pickle as pkl
 import operator
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-import datetime as dt
+import scipy.cluster.hierarchy as sch
+from matplotlib import pyplot as plt
+import itertools
 
 class Launchpad(QMainWindow):
     
@@ -117,31 +119,35 @@ class Launchpad(QMainWindow):
             
     def load_historic_prices(self):
         #QApplication.setOverrideCursor(Qt.WaitCursor)
-        fixings, start_dates = data_fns.yahoo_prices(self.symbols, start_date='1970-01-01')
+        fixings, info = data_fns.yahoo_prices(self.symbols, start_date='1970-01-01')
         #QApplication.restoreOverrideCursor()
         fixings.to_pickle(self.get_cache_name())   
-        pkl.dump(start_dates, open(self.get_start_cache_name(self.get_cache_name()), "wb"))
+        pkl.dump(info, open(self.get_info_cache_name(self.get_cache_name()), "wb"))
         self.update_cache_status()
         
     def mean_variance_optimization(self):
         self.lbl_optimize_status.setText("Optimization Running...")
         
         fixings_sparse = pd.read_pickle(self.get_cache_name())
-        start_dates = pkl.load(open(self.get_start_cache_name(self.get_cache_name()), "rb"))
-        self.fixings = fixings_sparse[fixings_sparse.index >= max(start_dates.values()) ].fillna(method='ffill')
+        info = pkl.load(open(self.get_info_cache_name(self.get_cache_name()), "rb"))
+        self.fixings = fixings_sparse[fixings_sparse.index >= max([val['start_date'] for key, val in info.items()]) ].fillna(method='ffill')
 
         if(self.cmb_optimization_method.currentText() == "Mean-Variance"):
             self.optimization_solutions = mean_variance(self.fixings)
-            self.optimization_solutions = sorted(self.optimization_solutions, key=lambda x: x['sd'])
             self.plot_portfolios(self.optimization_solutions)
         elif(self.cmb_optimization_method.currentText() == "Hierarchical Risk Parity"):
             self.optimization_solutions = hierarchical_risk_parity(self.fixings)
+            self.plot_dendrogram(self.optimization_solutions[0]['linkage'])
+            clusters = sch.fcluster(self.optimization_solutions[0]['linkage'], 0.5, 'distance')
+            print(dict(itertools.groupby(zip(self.fixings.columns, clusters))))
         elif(self.cmb_optimization_method.currentText() == "Hierarchical Risk Parity (Robust)"):
             self.optimization_solutions = hierarchical_risk_parity_robust(self.fixings)
+            self.plot_dendrogram(self.optimization_solutions[0]['linkage'])
         else:
             raise ValueError("Optimization method not yet implemented")
             
         self.lbl_optimize_status.setText("Optimization Complete")
+        self.optimization_solutions = sorted(self.optimization_solutions, key=lambda x: x['sd'])
         self.sli_vol_target.setMinimum(self.optimization_solutions[0]['sd']*1000)
         self.sli_vol_target.setMaximum(self.optimization_solutions[-1]['sd']*1000)
         self.standard_deviation_changed()
@@ -150,13 +156,13 @@ class Launchpad(QMainWindow):
         return os.path.normpath('Pickle/' + self.txt_universe.text().replace(".csv", ".pkl").translate(
                                 str.maketrans({"\\":  r"-", "/":  r"-"})))
     
-    def get_start_cache_name(self, cache):
-        return cache.replace(".pkl", "_starts.pkl")
+    def get_info_cache_name(self, cache):
+        return cache.replace(".pkl", "_info.pkl")
 
     def update_cache_status(self):
-        if os.path.exists(self.get_cache_name()) and os.path.exists(self.get_start_cache_name(self.get_cache_name())):
-            start_dates = pkl.load(open(self.get_start_cache_name(self.get_cache_name()), "rb"))
-            status = 'Cached. Max start date: {}'.format(max(start_dates.items(), key=operator.itemgetter(1)))
+        if os.path.exists(self.get_cache_name()) and os.path.exists(self.get_info_cache_name(self.get_cache_name())):
+            info = pkl.load(open(self.get_info_cache_name(self.get_cache_name()), "rb"))
+            status = 'Cached. Max start date: {}'.format(max([val['start_date'] for key, val in info.items()]))
         else:
             status = 'Nothing Cached @ {}'.format(self.get_cache_name())
 
@@ -178,6 +184,28 @@ class Launchpad(QMainWindow):
         self.plt_efficient_frontier.set_xlabel('Standard deviation')
         self.plt_efficient_frontier.set_ylabel('Return')
         self.can_efficient_frontier.draw()
+
+    def plot_dendrogram(self, linkage):
+        """self.plt_efficient_frontier.figure(figsize=(25, 10))
+        self.plt_efficient_frontier.title('Hierarchical Clustering Dendrogram')
+        self.plt_efficient_frontier.set_xlabel('sample index')
+        self.plt_efficient_frontier.set_ylabel('distance')
+        sch.dendrogram(
+            linkage,
+            leaf_rotation=90.,  # rotates the x axis labels
+            leaf_font_size=8.,  # font size for the x axis labels
+        )
+        self.plt_efficient_frontier.draw()"""
+        plt.figure(figsize=(25, 10))
+        plt.title('Hierarchical Clustering Dendrogram')
+        plt.xlabel('sample index')
+        plt.ylabel('distance')
+        sch.dendrogram(
+            linkage,
+            leaf_rotation=90.,  # rotates the x axis labels
+            leaf_font_size=8.,  # font size for the x axis labels
+        )
+        plt.show()
 
     def draw_weights(self, sol):
         self.plt_weights.clear()
