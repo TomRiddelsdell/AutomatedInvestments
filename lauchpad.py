@@ -24,6 +24,7 @@ from matplotlib.figure import Figure
 import scipy.cluster.hierarchy as sch
 from matplotlib import pyplot as plt
 import itertools
+from universe_reduction import UniverseReduction
 
 class Launchpad(QMainWindow):
     
@@ -48,20 +49,25 @@ class Launchpad(QMainWindow):
         self.txt_universe_status.move(260, 100)
         self.txt_universe_status.resize(400,40)
   
+        self.btn_universe_reduction = QPushButton('Asset Universe Reduction', self)
+        self.btn_universe_reduction.move(50, 150)
+        self.btn_universe_reduction.resize(200,40)
+        self.btn_universe_reduction.clicked.connect(self.universe_reduction)
+
         self.cmb_optimization_method = QComboBox(self)
         self.cmb_optimization_method.addItem("Mean-Variance")
         self.cmb_optimization_method.addItem("Hierarchical Risk Parity")
         self.cmb_optimization_method.addItem("Hierarchical Risk Parity (Robust)")
         self.cmb_optimization_method.resize(200,40)
-        self.cmb_optimization_method.move(260, 150)
+        self.cmb_optimization_method.move(260, 200)
 
         self.btn_optimization = QPushButton('Mean Variance Optimize', self)
-        self.btn_optimization.move(50, 150)
+        self.btn_optimization.move(50, 200)
         self.btn_optimization.resize(200,40)
         self.btn_optimization.clicked.connect(self.mean_variance_optimization)    
         
         self.lbl_optimize_status = QLabel(self)
-        self.lbl_optimize_status.move(470, 150)
+        self.lbl_optimize_status.move(470, 200)
         self.lbl_optimize_status.resize(400,40)
         
         self.sli_vol_target = QSlider(Qt.Horizontal)
@@ -124,7 +130,19 @@ class Launchpad(QMainWindow):
         fixings.to_pickle(self.get_cache_name())   
         pkl.dump(info, open(self.get_info_cache_name(self.get_cache_name()), "wb"))
         self.update_cache_status()
-        
+
+    def universe_reduction(self):
+        fixings_sparse = pd.read_pickle(self.get_cache_name())
+        info = pkl.load(open(self.get_info_cache_name(self.get_cache_name()), "rb"))
+
+        reduction = UniverseReduction(fixings_sparse, info)
+
+        fname = QFileDialog.getSaveFileName(self, 'Save file', 'Universe/ReducedAssetUniverse.csv')
+        if fname[0]:
+            reduction.store(fname[0])
+            self.txt_universe.setText(os.path.relpath(fname[0]))
+            self.symbols = pd.read_csv(self.txt_universe.text())
+
     def mean_variance_optimization(self):
         self.lbl_optimize_status.setText("Optimization Running...")
         
